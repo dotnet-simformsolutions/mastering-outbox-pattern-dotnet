@@ -1,0 +1,21 @@
+@baseUrl = http://localhost:5233
+
+POST {{baseUrl}}/orders
+Content-Type: application/json
+
+{
+  "customerId": "customer-42",
+  "total": 129.90
+}
+
+###
+
+GET {{baseUrl}}/orders/00000000-0000-0000-0000-000000000000
+
+###
+
+GET {{baseUrl}}/outbox/stats
+
+###
+
+GET {{baseUrl}}/health
