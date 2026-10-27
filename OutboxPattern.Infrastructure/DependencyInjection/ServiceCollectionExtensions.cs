@@ -20,6 +20,7 @@ public static class ServiceCollectionExtensions
         services.Configure<OutboxOptions>(configuration.GetSection(OutboxOptions.SectionName));
         services.AddScoped<OrderService>();
         services.AddScoped<SqlServerOutboxStore>();
+        services.AddScoped<IOutboxStore>(sp => sp.GetRequiredService<SqlServerOutboxStore>());
 
         return services;
     }

@@ -1,4 +1,6 @@
-using System.Text.Json;using OutboxPattern.Infrastructure.Outbox; using OutboxPattern.Infrastructure.Persistence;
+using System.Text.Json;
+using OutboxPattern.Infrastructure.Outbox;
+using OutboxPattern.Infrastructure.Persistence;
 
 namespace OutboxPattern.Infrastructure.Orders;
 
@@ -32,8 +34,8 @@ public sealed class OrderService
             EventType = nameof(OrderCreated),
             Payload = JsonSerializer.Serialize(orderCreated),
             AggregateId = order.Id,
-            CreatedAtUtc = now,
-            NextAttemptAtUtc = now
+            CreatedAtUtc = now
+            // NextAttemptAtUtc defaults to SYSUTCDATETIME() in the database
         });
 
         await _db.SaveChangesAsync(ct);

@@ -1,4 +1,5 @@
-using Azure.Messaging.ServiceBus;using OutboxPattern.Infrastructure.Outbox;
+using Azure.Messaging.ServiceBus;
+using OutboxPattern.Infrastructure.Outbox;
 
 namespace OutboxPattern.Infrastructure.Publishing;
 

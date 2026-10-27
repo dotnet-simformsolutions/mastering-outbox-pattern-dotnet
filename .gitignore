@@ -12,6 +12,4 @@ TestResults/
 !.env.example
 secrets.json
 appsettings.*.local.json
-/docs/architecture.md
-/docs/blog-sync-notes.md
-/docs/The Outbox Pattern in .NET From Fundamentals to Production.md
+docs/

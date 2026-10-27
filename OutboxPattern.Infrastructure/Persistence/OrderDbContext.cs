@@ -1,4 +1,6 @@
-using Microsoft.EntityFrameworkCore;using OutboxPattern.Infrastructure.Orders; using OutboxPattern.Infrastructure.Outbox;
+using Microsoft.EntityFrameworkCore;
+using OutboxPattern.Infrastructure.Orders;
+using OutboxPattern.Infrastructure.Outbox;
 
 namespace OutboxPattern.Infrastructure.Persistence;
 
@@ -32,7 +34,7 @@ public sealed class OrderDbContext(DbContextOptions<OrderDbContext> options) : D
             outbox.Property(m => m.LastError).HasMaxLength(LastErrorMaxLength);
             outbox.Property(m => m.CreatedAtUtc).HasColumnType("datetime2");
             outbox.Property(m => m.ProcessedAtUtc).HasColumnType("datetime2");
-            outbox.Property(m => m.NextAttemptAtUtc).HasColumnType("datetime2");
+            outbox.Property(m => m.NextAttemptAtUtc).HasColumnType("datetime2").HasDefaultValueSql("SYSUTCDATETIME()");
             outbox.Property(m => m.LockedUntilUtc).HasColumnType("datetime2");
 
             outbox.HasIndex(m => new { m.NextAttemptAtUtc, m.CreatedAtUtc })

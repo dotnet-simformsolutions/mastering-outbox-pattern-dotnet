@@ -1,14 +1,15 @@
-using Microsoft.Extensions.Logging;using OutboxPattern.Infrastructure.Publishing;
+using Microsoft.Extensions.Logging;
+using OutboxPattern.Infrastructure.Publishing;
 
 namespace OutboxPattern.Infrastructure.Outbox;
 
 public sealed class OutboxProcessor
 {
-    private readonly SqlServerOutboxStore _store;
+    private readonly IOutboxStore _store;
     private readonly IOutboxPublisher _publisher;
     private readonly ILogger<OutboxProcessor> _logger;
 
-    public OutboxProcessor(SqlServerOutboxStore store, IOutboxPublisher publisher, ILogger<OutboxProcessor> logger)
+    public OutboxProcessor(IOutboxStore store, IOutboxPublisher publisher, ILogger<OutboxProcessor> logger)
     {
         _store = store;
         _publisher = publisher;
@@ -34,13 +35,25 @@ public sealed class OutboxProcessor
             try
             {
                 await _publisher.PublishAsync(message, ct);
-                await _store.MarkProcessedAsync(message.Id, lockId, ct);
-                _logger.LogInformation("Published {EventType}", message.EventType);
-                OutboxMetrics.Published.Add(1);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
+                OutboxMetrics.Failed.Add(1);
                 await _store.ScheduleRetryAsync(message, lockId, ex, ct);
+                continue; // only a failed send counts as a retry
+            }
+
+            try
+            {
+                // The send already happened; don't let shutdown cancel the bookkeeping.
+                await _store.MarkProcessedAsync(message.Id, lockId, CancellationToken.None);
+                _logger.LogInformation("Published {EventType}", message.EventType);
+                OutboxMetrics.Published.Add(1);
+            }
+            catch (Exception ex)
+            {
+                // Let the lease expire. The event may be sent again, which consumers handle.
+                _logger.LogWarning(ex, "Sent but not marked; event may be republished");
             }
         }
 

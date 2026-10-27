@@ -6,7 +6,7 @@ using OutboxPattern.Infrastructure.Persistence;
 
 namespace OutboxPattern.Infrastructure.Outbox;
 
-public sealed class SqlServerOutboxStore
+public sealed class SqlServerOutboxStore : IOutboxStore
 {
     private readonly OrderDbContext _db;
     private readonly OutboxOptions _options;
@@ -19,6 +19,15 @@ public sealed class SqlServerOutboxStore
         _logger = logger;
     }
 
+    /// <summary>
+    /// Claims up to BatchSize pending rows with a lease. All time comparisons use the database clock.
+    /// </summary>
+    /// <remarks>
+    /// Rows are ordered by CreatedAtUtc only. A later row for the same order can be sent while an earlier
+    /// one is in backoff, and parallel workers can interleave; Service Bus sessions are not implemented.
+    /// For per-aggregate ordering, production code must either skip rows that have an earlier unprocessed
+    /// row for the same AggregateId, or version events and have consumers ignore stale ones.
+    /// </remarks>
     public Task<List<OutboxMessage>> ClaimBatchAsync(Guid lockId, CancellationToken ct)
     {
         var batchSize = new SqlParameter("batchSize", _options.BatchSize);
@@ -48,6 +57,7 @@ public sealed class SqlServerOutboxStore
 
     public async Task MarkProcessedAsync(Guid messageId, Guid lockId, CancellationToken ct)
     {
+        // ProcessedAtUtc is audit-only: the claim only checks it for NULL, so the app clock is fine here.
         var updated = await _db.OutboxMessages
             .Where(m => m.Id == messageId && m.LockId == lockId)
             .ExecuteUpdateAsync(s => s
@@ -65,16 +75,20 @@ public sealed class SqlServerOutboxStore
         var delay = BackoffCalculator.GetDelay(retryCount, _options.BaseDelay, _options.MaxDelay);
         var lastError = Truncate($"{exception.GetType().Name}: {exception.Message}", OrderDbContext.LastErrorMaxLength);
 
-        var updated = await _db.OutboxMessages
-            .Where(m => m.Id == message.Id && m.LockId == lockId)
-            .ExecuteUpdateAsync(s => s
-                .SetProperty(m => m.RetryCount, retryCount)
-                .SetProperty(m => m.NextAttemptAtUtc, DateTime.UtcNow.Add(delay))
-                .SetProperty(m => m.LastError, lastError)
-                .SetProperty(m => m.LockId, (Guid?)null)
-                .SetProperty(m => m.LockedUntilUtc, (DateTime?)null), ct);
+        var id = new SqlParameter("id", message.Id);
+        var lockIdParameter = new SqlParameter("lockId", lockId);
+        var delayMs = new SqlParameter("delayMs", (int)delay.TotalMilliseconds);
+        var lastErrorParameter = new SqlParameter("lastError", lastError);
 
-        OutboxMetrics.Failed.Add(1);
+        var updated = await _db.Database.ExecuteSqlAsync($"""
+            UPDATE OutboxMessages
+            SET RetryCount = RetryCount + 1,
+                NextAttemptAtUtc = DATEADD(MILLISECOND, {delayMs}, SYSUTCDATETIME()),
+                LastError = {lastErrorParameter},
+                LockId = NULL,
+                LockedUntilUtc = NULL
+            WHERE Id = {id} AND LockId = {lockIdParameter};
+            """, ct);
 
         if (updated == 0)
         {
