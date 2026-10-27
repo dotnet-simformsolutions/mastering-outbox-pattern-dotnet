@@ -29,7 +29,10 @@ public sealed class OrderDbContext(DbContextOptions<OrderDbContext> options) : D
 
         modelBuilder.Entity<OutboxMessage>(outbox =>
         {
+            outbox.HasKey(m => m.Id).IsClustered(false);
             outbox.Property(m => m.Id).ValueGeneratedNever();
+            outbox.Property<long>("Sequence").UseIdentityColumn();
+            outbox.HasIndex("Sequence").IsUnique().IsClustered();
             outbox.Property(m => m.EventType).HasMaxLength(200);
             outbox.Property(m => m.LastError).HasMaxLength(LastErrorMaxLength);
             outbox.Property(m => m.CreatedAtUtc).HasColumnType("datetime2");

@@ -31,7 +31,7 @@ public sealed class OrderService
         _db.OutboxMessages.Add(new OutboxMessage
         {
             Id = Guid.NewGuid(),
-            EventType = nameof(OrderCreated),
+            EventType = OrderCreated.EventType, // "orders.order-created.v1"
             Payload = JsonSerializer.Serialize(orderCreated),
             AggregateId = order.Id,
             CreatedAtUtc = now

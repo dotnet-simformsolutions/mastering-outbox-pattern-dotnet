@@ -45,6 +45,8 @@ A small, runnable proof of concept of the **Transactional Outbox Pattern** with 
 - **Retrying:** when a send fails, `RetryCount` goes up, `LastError` is saved (max 2000 chars) and the next attempt is delayed. The delay doubles each time (2s, 4s, 8s…), has a little randomness added, and is capped at `MaxDelay`. The delay is calculated in C#, but `NextAttemptAtUtc` is written by SQL Server as `DATEADD(MILLISECOND, @delayMs, SYSUTCDATETIME())`.
 - **Giving up:** after `MaxRetries` failures the row is logged at Error level and **left in place, never deleted**, so you can re-queue it.
 - **Crash recovery:** if a worker dies, its lease expires and another worker picks the row up.
+- **Event name:** `EventType` (and the Service Bus `Subject`) is the fixed contract name `orders.order-created.v1`, not the C# type name, so renaming a class can't break consumers. A new payload shape gets a new name (`.v2`).
+- **Keys:** `Id` (the Service Bus `MessageId`) is a non-clustered primary key. Rows are clustered on a `bigint IDENTITY` `Sequence` column, so inserts append to the end of the table instead of fragmenting it. A random `Guid` clustered key would scatter inserts, and `Guid.CreateVersion7()` doesn't help on SQL Server because `uniqueidentifier` sorts by its last bytes first.
 - **Delivery guarantee:** publishing is **at-least-once**, so an event may be sent more than once.
 - **Consumer:** for each message it inserts a `ProcessedMessages` row (primary key = `MessageId`) and a `StockReservation` in one transaction. A duplicate hits the primary key and is logged as `Duplicate … ignored`. Stock is reserved once. This consumer-side table is the **Inbox pattern**, a separate pattern from the outbox and a natural partner to it.
 
@@ -118,6 +120,16 @@ global.json                        tells dotnet test to use Microsoft.Testing.Pl
 - Optional: an **Azure Service Bus** namespace for the real end-to-end flow. You need Standard or Premium tier for duplicate detection.
 
 ## Setup
+
+### 0. Get the code
+
+```bash
+git clone https://github.com/dotnet-simformsolutions/mastering-outbox-pattern-dotnet.git
+```
+
+```bash
+cd mastering-outbox-pattern-dotnet
+```
 
 ### 1. Database
 
@@ -194,8 +206,8 @@ In Development the Worker uses the **Fake publisher**: it logs each "send" inste
 
 ```text
 Claimed 1 outbox messages with lock ...
-Fake publisher sent OrderCreated with MessageId ... (send #1)
-Published OrderCreated
+Fake publisher sent orders.order-created.v1 with MessageId ... (send #1)
+Published orders.order-created.v1
 ```
 
 `pendingCount` in `/outbox/stats` then drops back to 0.
@@ -210,7 +222,7 @@ All of these use the Fake publisher and a real SQL Server. Settings can be passe
 dotnet run --project OutboxPattern.Worker -- --Outbox:Fake:FailFirstNAttempts=2
 ```
 
-Create an order and watch the log. You'll see `Publish failed (attempt 1 of 10); next attempt in 2.xs`, then `attempt 2 … 4.xs`, then `Published OrderCreated`. The row keeps `RetryCount = 2` and the last error in `LastError`. While it waits, `NextAttemptAtUtc` is in the future by the database clock (`SELECT NextAttemptAtUtc, SYSUTCDATETIME() FROM OutboxMessages`).
+Create an order and watch the log. You'll see `Publish failed (attempt 1 of 10); next attempt in 2.xs`, then `attempt 2 … 4.xs`, then `Published orders.order-created.v1`. The row keeps `RetryCount = 2` and the last error in `LastError`. While it waits, `NextAttemptAtUtc` is in the future by the database clock (`SELECT NextAttemptAtUtc, SYSUTCDATETIME() FROM OutboxMessages`).
 
 **Retries exhausted, row kept for manual re-queue.**
 
@@ -335,7 +347,7 @@ dotnet run --project OutboxPattern.Worker -- --Outbox:Publisher=AzureServiceBus
 dotnet run --project OutboxPattern.Consumer
 ```
 
-Create an order. The Worker logs `Published OrderCreated`, then the Consumer logs `Stock reserved for order …`. The consumer completes a message only after its transaction has committed or the duplicate was detected.
+Create an order. The Worker logs `Published orders.order-created.v1`, then the Consumer logs `Stock reserved for order …`. The consumer completes a message only after its transaction has committed or the duplicate was detected.
 
 ## Configuration
 

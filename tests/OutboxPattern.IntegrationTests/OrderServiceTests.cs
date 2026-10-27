@@ -21,7 +21,7 @@ public class OrderServiceTests(SqlServerFixture fixture)
         await using var verify = fixture.CreateOrderDbContext();
         Assert.Equal(1, await verify.Orders.CountAsync(o => o.Id == order.Id, Ct));
         var outbox = await verify.OutboxMessages.SingleAsync(m => m.AggregateId == order.Id, Ct);
-        Assert.Equal(nameof(OrderCreated), outbox.EventType);
+        Assert.Equal(OrderCreated.EventType, outbox.EventType);
         Assert.Null(outbox.ProcessedAtUtc);
         Assert.Equal(0, outbox.RetryCount);
     }
